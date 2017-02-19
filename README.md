@@ -263,7 +263,7 @@ There are two ways to manage multiple servers.
       players = loads(message.Message)
       if players:
         for player in players:
-          print("Player:", player["DisplayName"], "- SteamID:", player["SteamID"])
+          print("Player:", player.DisplayName, "- SteamID:", player.SteamID)
       else:
         print("No players connected")
       playerlist_event.set()
@@ -331,7 +331,7 @@ There are two ways to manage multiple servers.
       players = loads(message.Message)
       if players:
         for player in players:
-          print("Player:", player["DisplayName"], "- SteamID:", player["SteamID"])
+          print("Player:", player.DisplayName, "- SteamID:", player.SteamID)
       else:
         print("No players connected")
       playerlist_event.set()

@@ -347,7 +347,7 @@ def ruco_say(message):
     exit()
   def on_connect(svc):
     svc.on_message_send.append(on_message_send)
-    svc.command("say %s" % message)
+    svc.command("say %s" % " ".join(message))
   call(connect, on_connect)
 
 def get_rc_path():

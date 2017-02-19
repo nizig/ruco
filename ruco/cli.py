@@ -175,6 +175,8 @@ def error(exc_info):
 def on_error(svc, exc_info):
   error(exc_info)
 
+# FIXME I'm tired and this is awful:
+
 def start_death_clock(name, timeout, extype=None):
   def on_timeout():
     threading.currentThread().setName("<%s>" % name)
@@ -198,6 +200,8 @@ def start_connect_timer(extype=ConnectTimeoutError):
 def start_response_timer(extype=ResponseTimeoutError):
   start_death_clock("[response timer]", rc.response_timeout, extype)
 
+# FIXME End awful
+
 def call(f, *args, **kwargs):
   try:
     return f(*args, **kwargs)
@@ -208,21 +212,15 @@ def call(f, *args, **kwargs):
   except:
     error(sys.exc_info())
 
-def get_service():
-  if rc.service:
-    return rc.service
-  rc.service = RustService(
+def connect(on_connect):
+  def on_connect_cancel_timer(svc):
+    stop_timer()
+  s = rc.service = RustService(
     rc.address,
     rc.port,
     rc.password,
     dump=rc.dump
   )
-  return rc.service
-
-def connect(on_connect):
-  def on_connect_cancel_timer(svc):
-    stop_timer()
-  s = get_service()
   s.on_connect.append(on_connect_cancel_timer)
   s.on_connect.append(on_connect)
   start_connect_timer()

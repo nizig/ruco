@@ -17,7 +17,7 @@ setup(
         "PyYAML",
         "click",
         "pytz",
-        "localtz",
+        "tzlocal",
         "tabulate",
         "websocket-client",
     ],

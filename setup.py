@@ -3,8 +3,8 @@ from setuptools import setup
 setup(
     name="ruco",
     packages=["ruco"],
-    version="0.1",
-    description="Library and utility for using the Rust game server console",
+    version="0.2",
+    description="Rust (by Facepunch Studios) rcon API and shell utility",
     author="exo",
     author_email="exo@eckso.io",
     url="https://github.com/nizig/ruco",

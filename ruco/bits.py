@@ -9,26 +9,54 @@ import traceback
 
 DEBUG = 3
 
-def err(msg):
-  print("ERR", msg, file=stderr)
+def attrs(*args, **pairs):
+  """
+  Wrap an instance of a mapping type such that keys may be accessed as
+  attributes. The mapping super-type may be specified, defaulting to dict.
 
-def warn(msg):
-  DEBUG > 0 and print("WARN", msg, file=stderr)
+  attrs(source_dict)
+  attrs(source_dict, super_type)
+  attrs(key1=val1, key2=val2, ...)
+  attrs(None, super_type, key1=val1, key2=val2, ...)
+  """
+  # FIXME This could use some love, but it works well enough for now.
+  if args and args[0] and pairs:
+    raise ValueError("copy and pairs are mutually exclusive")
+  copy = args and args[0] or pairs
+  type = len(args) > 1 and args[1] or dict
+  class _(type):
+    __setattr__ = type.__setitem__
+    __delattr__ = type.__delitem__
+    def __init__(self):
+      super().__init__(copy)
+    def __getattr__(self, name):
+      if name not in self:
+        raise AttributeError("No such attribute: %s" % name)
+      return self.__getitem__(name)
+  return _()
 
-def dbg(msg):
-  DEBUG > 1 and print("DBG", msg, file=sys.stderr)
+def ottrs(*args, **pairs):
+  return attrs(args and args[0] or None, collections.OrderedDict, **pairs)
 
-def spam(msg):
-  DEBUG > 2 and print("SPAM", msg, file=sys.stderr)
+fds = attrs(
+  out=sys.stdout,
+  err=sys.stderr
+)
 
-class attrs(collections.OrderedDict):
-  __setattr__ = collections.OrderedDict.__setitem__
-  __delattr__ = collections.OrderedDict.__delitem__
+def out(*args):
+  print(*args, file=fds.out)
 
-  def __getattr__(self, name):
-    if name not in self:
-      raise AttributeError("No such attribute: %s" % name)
-    return self.__getitem__(name)
+def err(*args):
+  print(*args, file=fds.err)
+
+def warn(*args):
+  DEBUG > 0 and print("WARN", *args, file=fds.err)
+
+def dbg(*args):
+  DEBUG > 1 and print("DBG", *args, file=fds.err)
+
+def spam(*args):
+  DEBUG > 2 and print("SPAM", *args, file=fds.err)
 
 def dispatch(handlers, *args, **kwargs):
   errors = []
@@ -47,7 +75,7 @@ def dispatch(handlers, *args, **kwargs):
 def loads(s, *a, **kw):
   if hasattr(s, "decode"):
     s = s.decode("utf-8")
-  return json.loads(s, *a, object_pairs_hook=attrs, **kw)
+  return json.loads(s, *a, object_pairs_hook=ottrs, **kw)
 
 dumps = json.dumps
 

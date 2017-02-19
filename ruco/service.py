@@ -7,7 +7,7 @@ import websocket
 from distutils.util import strtobool
 
 from . import bits
-from .bits import dbg, spam, attrs, loads, dumps, dispatch
+from .bits import out, err, dbg, spam, attrs, loads, dumps, dispatch
 
 DEBUG_WEBSOCKET = strtobool(os.environ.get("DEBUG_WEBSOCKET", "0"))
 
@@ -41,7 +41,7 @@ class RustService(object):
 
   def _on_message_recv(self, msg):
     if self.dump:
-      print("RECV", dumps(msg), file=sys.stderr)
+      err("RECV", dumps(msg))
     id = msg.Identifier
     if id > 1000:
       request = self.requests.get(id)
@@ -63,6 +63,8 @@ class RustService(object):
       # FIXME hmm...
       self.socket.on_close = None
       self.socket.close()
+    except SystemExit:
+      raise
     except:
       pass
     socket = None
@@ -75,7 +77,7 @@ class RustService(object):
 
   def _send(self, msg):
     if self.dump:
-      print("SEND", dumps(msg), file=sys.stderr)
+      err("SEND", dumps(msg))
     self.socket.send(dumps(msg))
     dispatch(self.on_message_send, self, msg)
 
@@ -102,6 +104,7 @@ class RustService(object):
       self._on_message_recv(loads(m))
     def on_pong(*a, **kw):
       self._expire_requests()
+    socket = None
     try:
       websocket.enableTrace(DEBUG_WEBSOCKET)
       socket = websocket.WebSocketApp(
@@ -113,8 +116,14 @@ class RustService(object):
         on_pong = on_pong
       )
       socket.run_forever()
+    except SystemExit:
+      raise
     except KeyboardInterrupt:
-      pass
+      self._on_error(socket, sys.exc_info())
+      return
+    except:
+      self._on_error(socket, sys.exc_info())
+      raise
 
   def disconnect(self):
     self.socket.close()
@@ -132,10 +141,10 @@ class RustService(object):
     self._expire_requests()
     id = self.identifier
     assert(id not in self.requests)
-    self.requests[id] = attrs({
-      "callback": cb,
-      "time": time.time(),
-    })
+    self.requests[id] = attrs(
+      callback=cb,
+      time=time.time(),
+    )
     try:
       self.command(msg, id)
     except SystemExit:
@@ -164,6 +173,7 @@ class RustServiceThread(RustService):
         raise
       except:
         self.error = sys.exc_info()
+        #self._on_error(self.socket, self.error)
       finally:
         self.thread = None
     self.thread = threading.Thread(target=run, name=self.name)

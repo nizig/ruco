@@ -13,29 +13,29 @@ from websocket._exceptions \
 
 from . import clicker
 from . import bits
-from .bits import dbg, attrs, loads, dumps, spin
+from .bits import out, err, dbg, attrs, loads, dumps, spin
 from .service import RustServiceThread
 
-rc = attrs({
-  "address": None,
-  "port": 28016,
-  "password": None,
-  "connect_timeout": 20,
-  "response_timeout": 3,
-  "tail_count": 30,
-  "debug": 3,
-  "dump": False,
-  "trace": False,
-  "trace_filter": 1,
-  "service": None,
-  "rc_path": None,
-  "rc_paths": (
+rc = attrs(
+  address=None,
+  port=28016,
+  password=None,
+  connect_timeout=20,
+  response_timeout=3,
+  tail_count=30,
+  debug=1,
+  dump=False,
+  trace=False,
+  trace_filter=1,
+  service=None,
+  rc_path=None,
+  rc_paths=(
     os.path.join(os.path.expanduser("~"), ".config", "rucorc"),
     os.path.join(os.path.expanduser("~"), ".rucorc"),
     "rucorc",
     ".rucorc",
   ),
-})
+)
 
 cli_spec = """
 
@@ -133,6 +133,7 @@ class ResponseTimeoutError(RucoException): pass
 def exit(status=0):
   s = rc.service
   if s:
+    on_error in s.on_error and s.on_error.remove(on_error)
     s.connected and s.disconnect()
     s.join()
   os._exit(status)
@@ -141,9 +142,9 @@ def error(exc_info):
   if isinstance(exc_info, Exception):
     exc_info = bits.make_exc_info(exc_info)
   if rc.debug:
-    traceback.print_exception(*exc_info, file=sys.stderr)
+    dbg(traceback.format_exception(*exc_info))
   else:
-    print(exc_info[1], file=sys.stderr)
+    err(exc_info[1])
   exit(-1)
 
 def on_error(svc, exc_info):
@@ -207,11 +208,11 @@ def display(msg):
   if "time" in msg:
     pass # FIXME
   try:
-    print(dumps(loads(msg.Message)))
+    out(dumps(loads(msg.Message)))
     return
   except:
     pass
-  print(msg.Message)
+  out(msg.Message)
 
 def ruco(
   address,
@@ -285,7 +286,7 @@ def ruco_players():
       try:
         players = loads(msg.Message)
         if not players:
-          print("No players connected.")
+          out("No players connected.")
           return
         headers = [
           "Name",
@@ -311,7 +312,7 @@ def ruco_players():
             player.VoiationLevel,
           ) for player in players
         )
-        print(tabulate(players, headers=headers))
+        out(tabulate(players, headers=headers))
       finally:
         notify()
     get_service().request("playerlist", on_response)
@@ -342,8 +343,9 @@ def load_rc():
       if k not in os.environ:
         os.environ[k] = v
   except:
-    traceback.print_exc(file=sys.stderr)
-    print("%sError loading config file: %s" % (os.linesep, p))
+    err("%s%sError loading config file: %s" % (
+      traceback.format_exc(), os.linesep, p
+    ))
     sys.exit(-1)
 
 def main():

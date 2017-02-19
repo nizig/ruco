@@ -9,8 +9,6 @@ from distutils.util import strtobool
 from . import bits
 from .bits import out, err, dbg, spam, attrs, loads, dumps, dispatch
 
-DEBUG_WEBSOCKET = strtobool(os.environ.get("DEBUG_WEBSOCKET", "0"))
-
 class RustService(object):
 
   REQUEST_EXPIRY = 300
@@ -47,11 +45,15 @@ class RustService(object):
       request = self.requests.get(id)
       if request is not None:
         msg.request = request
-        dispatch((request.callback,), self, msg)
+        if request.callback:
+          dispatch((request.callback,), self, msg)
         return
       else:
         spam("Received response for unknown request: %s" % msg)
     dispatch(self.on_message_recv, self, msg)
+
+  def _on_message_send(self, msg):
+    dispatch(self.on_message_send, self, msg)
 
   def _on_connect(self, socket):
     self.socket = socket
@@ -79,7 +81,7 @@ class RustService(object):
     if self.dump:
       err("SEND", dumps(msg))
     self.socket.send(dumps(msg))
-    dispatch(self.on_message_send, self, msg)
+    self._on_message_send(msg)
 
   def _expire_requests(self):
     if len(self.requests) == 0:
@@ -106,7 +108,7 @@ class RustService(object):
       self._expire_requests()
     socket = None
     try:
-      websocket.enableTrace(DEBUG_WEBSOCKET)
+      websocket.enableTrace(strtobool(os.environ.get("DEBUG_WEBSOCKET", "0")))
       socket = websocket.WebSocketApp(
         "ws://%s:%d/%s" % (self.address, self.port, self.password),
         on_open = self._on_connect,
@@ -126,7 +128,8 @@ class RustService(object):
       raise
 
   def disconnect(self):
-    self.socket.close()
+    if self.socket:
+      self.socket.close()
 
   def command(self, msg, id):
     if id is None:
@@ -138,7 +141,6 @@ class RustService(object):
     })
 
   def request(self, msg, cb):
-    self._expire_requests()
     id = self.identifier
     assert(id not in self.requests)
     self.requests[id] = attrs(

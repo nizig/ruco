@@ -1,21 +1,30 @@
-ruco
-====
+# ruco
+
 Rust (by Facepunch Studios) rcon API and shell utility for Python.
 
 **ru**st **co**nsole
 
-Installation
-------------
+## Contents
+
+- [Installation](#installation)
+- [Utility Built-In Help](#utility-built-in-help)
+- [Utility Examples](#utility-examples)
+- [Utility Configuration Example](#utility-configuration-example)
+- [Managing Multiple Servers](#managing-multiple-servers)
+- [API Usage Example](#api-usage-example)
+
+## Installation
+
 Only Python3 is supported. I will port it to Python2 eventually. Install with pip. For example, on Debian systems:
 
     # pip3 install ruco
 
-Built-in Help
--------------
+## Utility Built-in Help
+
 Every command provides a `--help` flag, which describes every sub-command and flag.
 
-Shell Utility Example
----------------------
+## Utility Examples
+
 Show connected players:
 
     $ ruco --address narwhal.eckso.io --password mySocratesNote players
@@ -112,25 +121,25 @@ Show the last 5 lines of console output, but stay connected, showing future serv
     ^C
     $
 
-Shell Utility Configuration Example
------------------------------------
+## Utility Configuration Example
+
 There are three ways to configure the shell utility. In order of precedence:
 
     1. Command-line flags
     2. Environment variables
     3. Config file
 
-**Flags**
+### Flags
 
 Use `ruco --help` to get information about command line flags.
 
-**Environment Variables**
+### Environment Variables
 
     $ export RUCO_ADDRESS="my.rust.server.com"
     $ export RUCO_PORT="28016"
     $ export RUCO_PASSWORD="mySocratesNote"
 
-**Config File**
+### Config File
 
 The config file should be placed at `~/.config/rucorc` or `~/.rucorc`. Example:
 
@@ -138,7 +147,7 @@ The config file should be placed at `~/.config/rucorc` or `~/.rucorc`. Example:
     RUCO_PORT="28016"
     RUCO_PASSWORD="mySocratesNote"
 
-**Easy Peasy**
+### Easy Peasy
 
 Now we can invoke ruco without passing a bunch of command-line flags. Here are the examples from the above with `RUCO_ADDRESS` and `RUCO_PASSWORD` set via a config file or environment variables:
 
@@ -151,15 +160,15 @@ Now we can invoke ruco without passing a bunch of command-line flags. Here are t
     $ ruco tail -n 5
     $ ruco tail -n 5 -f
 
-Managing multiple servers
--------------------------
+## Managing multiple servers
+
 
 There are two ways to manage multiple servers.
 
 - Multiple bash environments
 - Multiple config files
 
-**Multiple bash environments**
+### Multiple bash environments
 
     # Create a directory for your environments.
     $ mkdir ~/servers
@@ -186,7 +195,7 @@ There are two ways to manage multiple servers.
     $ ruco rcon reload FancyCopter
     $ ruco rcon -q spawn.fill_populations
 
-**Multiple Config Files**
+### Multiple Config Files
 
     # Create a directory for your config files.
     $ mkdir ~/servers
@@ -225,7 +234,159 @@ There are two ways to manage multiple servers.
     $ RUCO_RC=~/servers/server2.rucorc ruco rcon reload FancyCopter
     $ RUCO_RC=~/servers/server2.rucorc ruco rcon spawn.fill_populations
 
-API Usage Example
------------------
-Forthcoming...
+## API Usage Example
 
+### Without Comments
+
+    import ruco
+    import time
+    import threading
+    import traceback
+
+    from ruco.bits import loads
+    from ruco.service import RustServiceThread
+
+    tail_event = threading.Event()
+
+    def on_tail_response(service, message):
+      logs = loads(message.Message)
+      if logs:
+        for log in logs:
+          print("tail:", log.Message)
+      else:
+        print("No console logs available")
+      tail_event.set()
+
+    playerlist_event = threading.Event()
+
+    def on_playerlist_response(service, message):
+      players = loads(message.Message)
+      if players:
+        for player in players:
+          print("Player:", player["DisplayName"], "- SteamID:", player["SteamID"])
+      else:
+        print("No players connected")
+      playerlist_event.set()
+
+    def on_connect(service):
+      service.request("tail 10", on_tail_response)
+      service.request("playerlist", on_playerlist_response)
+
+    def on_message_recv(service, message):
+      print("Console message: %s" % message.Message)
+
+    def on_error(service, error):
+      traceback.print_exception(*error)
+
+    def on_disconnect(service):
+      print("Disconnected from rust server")
+
+    def main():
+      rust = RustServiceThread("my.rust.server.com", 28016, "myPassword")
+
+      rust.on_connect.append(on_connect)
+      rust.on_message_recv.append(on_message_recv)
+      rust.on_error.append(on_error)
+      rust.on_disconnect.append(on_disconnect)
+
+      rust.connect()
+
+      tail_event.wait()
+      playerlist_event.wait()
+
+      rust.disconnect()
+
+    if __name__ == "__main__":
+      main()
+
+
+### With Comments
+
+    import ruco
+    import time
+    import threading
+    import traceback
+
+    from ruco.bits import loads
+    from ruco.service import RustServiceThread
+
+    # Event used to notify main thread that the tail response was received.
+    tail_event = threading.Event()
+
+    # Handle the response for the 'tail' command.
+    def on_tail_response(service, message):
+      logs = loads(message.Message)
+      if logs:
+        for log in logs:
+          print("tail:", log.Message)
+      else:
+        print("No console logs available")
+      tail_event.set()
+
+    # Event used to notify main thread that the playerlist response was received.
+    playerlist_event = threading.Event()
+
+    # Handle the response for the 'playerlist' command.
+    def on_playerlist_response(service, message):
+      players = loads(message.Message)
+      if players:
+        for player in players:
+          print("Player:", player["DisplayName"], "- SteamID:", player["SteamID"])
+      else:
+        print("No players connected")
+      playerlist_event.set()
+
+    # on_connect callbacks are called after successful handshake with the rust
+    # server.
+    def on_connect(service):
+      # Send the 'tail' command to get the last few lines of console output. Send
+      # the command request along with a callback to handle the command's response.
+      service.request("tail 10", on_tail_response)
+
+      # Print the list of connected players. Send the command request along with
+      # the callback to handle the command's response.
+      service.request("playerlist", on_playerlist_response)
+
+    # on_message_recv callbacks are called when a message is received that is
+    # not a response to a command - i.e., they're console messages.
+    def on_message_recv(service, message):
+      print("Console message: %s" % message.Message)
+
+    # on_error callbacks are called when an error occurs in the websocket event
+    # loop. The websocket will be explicitly closed after on_error handlers are
+    # called, but, depending on the error, may already be closed when handlers are
+    # called.
+    def on_error(service, error):
+      traceback.print_exception(*error)
+
+    # on_disconnect will be called after we have been disconnected from the rust
+    # server.
+    def on_disconnect(service):
+      print("Disconnected from rust server")
+
+    def main():
+      # RustService is the non-threaded version.
+      rust = RustServiceThread("my.rust.server.com", 28016, "myPassword")
+
+      # Add handlers before connecting.
+      rust.on_connect.append(on_connect)
+      rust.on_message_recv.append(on_message_recv)
+      rust.on_error.append(on_error)
+      rust.on_disconnect.append(on_disconnect)
+
+      # Connect, and the handlers will take care of the rest. In the non-threaded
+      # version, this will return only after disconnect() is called.
+      rust.connect()
+
+      # Wait for the message handlers to receive their responses.
+      tail_event.wait()
+      playerlist_event.wait()
+
+      # Or to stay connected and listen to console output, comment out the last
+      # two lines, and uncomment this:
+      # rust.join()
+
+      rust.disconnect()
+
+    if __name__ == "__main__":
+      main()

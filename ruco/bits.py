@@ -9,6 +9,11 @@ import traceback
 
 DEBUG = 3
 
+def format_seconds(i):
+  h, r = divmod(i, 3600)
+  m, s = divmod(r, 60)
+  return "%sh%sm%ss" % (h, m, s)
+
 def xttrs(type, *args, **kwargs):
   """
   Wrap an instance of a mapping type such that keys may be accessed as
@@ -34,7 +39,7 @@ def ottrs(*args, **kwargs):
 
 fds = attrs(
   out=sys.stdout,
-  err=sys.stderr
+  err=sys.stderr,
 )
 
 def out(*args):
@@ -77,7 +82,7 @@ def make_exc_info(ex):
   if isinstance(ex, SystemExit):
     raise ex
   try:
-    raise Exception(ex)
+    raise ex
   except:
     return sys.exc_info()
 

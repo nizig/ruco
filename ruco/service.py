@@ -131,7 +131,7 @@ class RustService(object):
     if self.socket:
       self.socket.close()
 
-  def command(self, msg, id):
+  def command(self, msg, id=None):
     if id is None:
       id = -1
     self._send({
@@ -157,28 +157,25 @@ class RustService(object):
 
 class RustServiceThread(RustService):
 
-  def __init__(self, *a, name="[rust]", trace=False, trace_filter=True, **kw):
+  def __init__(self, *a, name="[rust]", **kw):
     super().__init__(*a, **kw)
     self.name = name
-    self.trace = trace
-    self.trace_filter = trace_filter
     self.thread = None
     self.error = None
 
+  def _run(self):
+    try:
+      super().connect()
+    except SystemExit:
+      raise
+    except:
+      self.error = sys.exc_info()
+      #self._on_error(self.socket, self.error)
+    finally:
+      self.thread = None
+
   def connect(self):
-    s = super()
-    def run():
-      bits.trace(self.trace, filt=self.trace_filter)
-      try:
-        s.connect()
-      except SystemExit:
-        raise
-      except:
-        self.error = sys.exc_info()
-        #self._on_error(self.socket, self.error)
-      finally:
-        self.thread = None
-    self.thread = threading.Thread(target=run, name=self.name)
+    self.thread = threading.Thread(target=self._run, name=self.name)
     self.thread.start()
 
   def disconnect(self, wait=0):

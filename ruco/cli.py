@@ -1,9 +1,10 @@
 import click
 import os
+import pytz
 import shlex
 import sys
-import time
 import threading
+import time
 import traceback
 
 from tabulate import tabulate
@@ -14,15 +15,16 @@ from websocket._exceptions \
 from . import clicker
 from . import bits
 from .bits import out, err, dbg, attrs, loads, dumps, spin
-from .service import RustServiceThread
+from .service import RustService
 
 rc = attrs(
   address=None,
   port=28016,
   password=None,
-  connect_timeout=20,
-  response_timeout=3,
-  tail_count=30,
+  connect_timeout=15,
+  response_timeout=5,
+  console_log_count=45,
+  chat_log_count=45,
   debug=1,
   dump=False,
   trace=False,
@@ -91,27 +93,13 @@ options:
 
 commands:
 
-  - name: tail
-    help: Print console output to the screen
-
-    options:
-
-      - name: -f --follow
-        help: Follow output until interrupted
-        is_flag: yes
-
-      - name: -n --count
-        help: Show a number of lines, starting from the end, default 15
-        type: int
-        default: {tail_count}
-
   - name: rcon
     help: Send a command to the server
 
     options:
 
       - name: -q --quiet
-        help: Don't wait for a response after sending the command.
+        help: Don't wait for a response after sending the command
         is_flag: yes
 
     arguments:
@@ -123,6 +111,42 @@ commands:
   - name: players
     help: Show connected players
 
+  - name: console
+    help: Print console log
+
+    options:
+
+      - name: -f --follow
+        help: Follow console log until interrupted
+        is_flag: yes
+
+      - name: -n --count
+        help: Show a number of lines from the end, default {console_log_count}
+        type: int
+        default: {console_log_count}
+
+  - name: chat
+    help: Print chat log
+
+    options:
+
+      - name: -f --follow
+        help: Follow chat log until interrupted
+        is_flag: yes
+
+      - name: -n --count
+        help: Scan a number of lines from the end for chat messages, default {chat_log_count}
+        type: int
+        default: {chat_log_count}
+
+  - name: say
+    help: Send a chat message to players
+
+    arguments:
+
+      - name: message
+        nargs: -1
+        required: yes
 
 """.format(**rc)
 
@@ -135,61 +159,44 @@ def exit(status=0):
   if s:
     on_error in s.on_error and s.on_error.remove(on_error)
     s.connected and s.disconnect()
-    s.join()
+  # This function could be called by threads other than main, so use os._exit
   os._exit(status)
+  #sys.exit(status)
 
 def error(exc_info):
   if isinstance(exc_info, Exception):
     exc_info = bits.make_exc_info(exc_info)
   if rc.debug:
-    dbg(traceback.format_exception(*exc_info))
+    dbg("".join(traceback.format_exception(*exc_info)))
   else:
-    err(exc_info[1])
+    err("%s: %s" % (exc_info[1].__class__.__name__, exc_info[1]))
   exit(-1)
 
 def on_error(svc, exc_info):
   error(exc_info)
 
-done = threading.Event()
+def start_death_clock(name, timeout, extype=None):
+  def on_timeout():
+    threading.currentThread().setName("<%s>" % name)
+    bits.trace(enabled=rc.trace, filt=rc.trace_filter)
+    extype and error(extype("Timed out")) or exit()
+  t = getattr(start_death_clock, "timer", None)
+  if t:
+    t.cancel()
+  t = start_death_clock.timer = threading.Timer(timeout, on_timeout)
+  t.start()
 
-def wait_for_connect():
-  if not done.wait(rc.connect_timeout):
-    error(ConnectTimeoutError("Timed out waiting for connect"))
-  done.clear()
+def stop_timer():
+  t = getattr(start_death_clock, "timer", None)
+  if t:
+    t.cancel()
+    start_death_clock.timer = None
 
-def wait_for_disconnect():
-  if rc.service:
-    spin(-1, 0.4, lambda: not rc.service.connected)
+def start_connect_timer(extype=ConnectTimeoutError):
+  start_death_clock("[connect timer]", rc.connect_timeout, extype)
 
-def wait_for_response():
-  if not done.wait(rc.response_timeout):
-    error(ResponseTimeoutError("Timed out waiting for command response"))
-  done.clear()
-
-def notify():
-  done.set()
-
-def get_service():
-  s = rc.service
-  if s:
-    return s
-  def on_connect(svc):
-    notify()
-  s = RustServiceThread(
-    rc.address,
-    rc.port,
-    rc.password,
-    trace=rc.trace,
-    trace_filter=rc.trace_filter,
-    dump=rc.dump
-  )
-  s.on_connect.append(on_connect)
-  s.on_error.append(on_error)
-  s.connect()
-  wait_for_connect()
-  s.on_connect.remove(on_connect)
-  rc.service = s
-  return s
+def start_response_timer(extype=ResponseTimeoutError):
+  start_death_clock("[response timer]", rc.response_timeout, extype)
 
 def call(f, *args, **kwargs):
   try:
@@ -201,18 +208,41 @@ def call(f, *args, **kwargs):
   except:
     error(sys.exc_info())
 
+def get_service():
+  if rc.service:
+    return rc.service
+  rc.service = RustService(
+    rc.address,
+    rc.port,
+    rc.password,
+    dump=rc.dump
+  )
+  return rc.service
+
+def connect(on_connect):
+  def on_connect_cancel_timer(svc):
+    stop_timer()
+  s = get_service()
+  s.on_connect.append(on_connect_cancel_timer)
+  s.on_connect.append(on_connect)
+  start_connect_timer()
+  s.connect()
+
 def display(msg):
   if rc.dump:
-    # The service will dump all messages in dump mode.
+    # The service will dump all messages in dump mode
     return
-  if "time" in msg:
-    pass # FIXME
-  try:
-    out(dumps(loads(msg.Message)))
-    return
-  except:
-    pass
-  out(msg.Message)
+  stamp = time.strftime("%H:%M:%S", time.localtime(msg.get("Time")))
+  type = "Type" in msg and msg.Type and "[%s] " % msg.Type or ""
+  text = "%s %s%s" % (stamp, type, msg.Message)
+  if "Username" in msg:
+    text = "%s <%s> %s" % (stamp, msg.Username, msg.Message)
+  else:
+    try:
+      text = "%s %s" % (stamp, dumps(loads(msg.Message), indent=4))
+    except:
+      pass
+  out(text)
 
 def ruco(
   address,
@@ -239,102 +269,102 @@ def ruco(
     bits.trace(enabled=trace, filt=trace_filter)
   call(_ruco)
 
-def ruco_tail(follow, count):
-  def _ruco_tail():
-    def on_message_recv(svc, msg):
-      display(msg)
-    def on_tail_response(svc, msg):
-      logs = loads(msg.Message)
-      for log in logs:
-        on_message_recv(svc, log)
-      notify()
-    s = get_service()
-    s.request("console.tail %d" % count, on_tail_response)
-    wait_for_response()
-    if follow:
-      s.on_message_recv.append(on_message_recv)
-      wait_for_disconnect()
-    else:
-      exit()
-  call(_ruco_tail)
-
 def ruco_rcon(quiet, command):
-  def _ruco_rcon():
-    def timeout():
-      threading.currentThread().setName("<wait>")
-      bits.trace(enabled=rc.trace, filt=rc.trace_filter)
-      exit()
-    def on_response(svc, msg):
-      if msg.Message:
-        display(msg)
-    def on_message_send(svc, msg):
-      exit()
-    s = get_service()
+  timer_reset = attrs(value=False)
+  def on_message_send(svc, msg):
+    exit()
+  def on_command_response(svc, msg):
+    display(msg)
+    if timer_reset.value is False:
+      start_response_timer(extype=None)
+      timer_reset.value = True
+  def on_connect(svc):
     if quiet:
-      s.on_message_send.append(on_message_send)
+      svc.on_message_send.append(on_message_send)
     else:
-      s.on_message_recv.append(on_response)
-      t = threading.Timer(rc.response_timeout, timeout)
-      t.start()
-    s.request(" ".join(command), on_response)
-    wait_for_disconnect()
-  call(_ruco_rcon)
+      start_response_timer()
+    svc.request(" ".join(command), on_command_response)
+  call(connect, on_connect)
 
 def ruco_players():
-  def _ruco_players():
-    def on_response(svc, msg):
-      try:
-        players = loads(msg.Message)
-        if not players:
-          out("No players connected.")
-          return
-        headers = [
-          "Name",
-          "Steam ID",
-          "Ping",
-          "Address",
-          "Connected",
-          "Health",
-          "Violation",
-        ]
-        def interval(i):
-          h, r = divmod(i, 3600)
-          m, s = divmod(r, 60)
-          return "%sh%sm%ss" % (h, m, s)
-        players = (
-          (
-            player.DisplayName,
-            player.SteamID,
-            player.Ping,
-            player.Address,
-            interval(player.ConnectedSeconds),
-            player.Health,
-            player.VoiationLevel,
-          ) for player in players
-        )
-        out(tabulate(players, headers=headers))
-      finally:
-        notify()
-    get_service().request("playerlist", on_response)
-    wait_for_response()
+  def on_playerlist_response(svc, msg):
+    players = loads(msg.Message)
+    if not players:
+      out("No players connected.")
+      exit()
+    headers = [
+      "Name",
+      "Steam ID",
+      "Ping",
+      "Address",
+      "Connected",
+      "Health",
+      "Violation",
+    ]
+    players = (
+      (
+        player.DisplayName,
+        player.SteamID,
+        player.Ping,
+        player.Address,
+        bits.format_seconds(player.ConnectedSeconds),
+        player.Health,
+        player.VoiationLevel,
+      ) for player in players
+    )
+    out(tabulate(players, headers=headers))
     exit()
-  call(_ruco_players)
+  def on_connect(svc):
+    svc.request("playerlist", on_playerlist_response)
+  call(connect, on_connect)
+
+def _ruco_log(follow, count, cmd, filt=None):
+  def on_message_recv(svc, msg):
+    if not filt or not filt(msg):
+      display(msg)
+  def on_tail_response(svc, msg):
+    logs = loads(msg.Message)
+    if len(logs) == 0:
+      print("No messages available.")
+    else:
+      for log in logs:
+        display(log)
+    if follow:
+      svc.on_message_recv.append(on_message_recv)
+    else:
+      exit()
+  def on_connect(svc):
+    svc.request("%s %d" % (cmd, count), on_tail_response)
+  call(connect, on_connect)
+
+def ruco_console(follow, count):
+  _ruco_log(follow, count, "console.tail")
+
+def ruco_chat(follow, count):
+  filt = lambda m: "Type" in m and m.Type != "Chat"
+  _ruco_log(follow, count, "chat.tail", filt)
+
+def ruco_say(message):
+  def on_message_send(svc, msg):
+    exit()
+  def on_connect(svc):
+    svc.on_message_send.append(on_message_send)
+    svc.command("say %s" % message)
+  call(connect, on_connect)
+
+def get_rc_path():
+  envrc = "RUCO_RC" in os.environ and os.environ["RUCO_RC"] or None
+  paths = envrc and (envrc,) + rc.rc_paths or rc.rc_paths
+  for p in paths:
+    if os.path.isfile(p):
+      return p
+  return None
+
+def read_rc(path):
+  with open(path) as rc:
+    return dict(token.split("=") for token in shlex.split(rc.read()))
 
 def load_rc():
-  def get_rc_path():
-    envrc = (
-      "RUCO_RC" in os.environ and os.environ["RUCO_RC"] or
-      "RC" in os.environ and os.environ["RC"] or
-      None
-    )
-    paths = envrc and (envrc,) + rc.rc_paths or rc.rc_paths
-    for p in paths:
-      if os.path.isfile(p):
-        return p
-    return None
-  def read_rc(path):
-    with open(path) as rc:
-      return dict(token.split("=") for token in shlex.split(rc.read()))
   rc.rc_path = p = get_rc_path()
   if not p:
     return
@@ -352,7 +382,7 @@ def main():
   threading.current_thread().setName("<main>")
   load_rc()
   # Start tracing as early as possible when set via the config file or an
-  # environment variable.
+  # environment variable
   bits.trace(enabled=rc.trace, filt=rc.trace_filter)
   cli = clicker.Cli()
   cli.loads(cli_spec)

@@ -236,7 +236,58 @@ There are two ways to manage multiple servers.
 
 ## API Usage Example
 
-### Without Comments
+### Event loop
+
+    import ruco
+    import time
+    import traceback
+
+    from ruco.bits import loads
+    from ruco.service import RustService
+
+    def on_tail_response(service, message):
+      logs = loads(message.Message)
+      if logs:
+        for log in logs:
+          print("tail:", log.Message)
+      else:
+        print("No console logs available")
+
+    def on_playerlist_response(service, message):
+      players = loads(message.Message)
+      if players:
+        for player in players:
+          print("Player:", player.DisplayName, "- SteamID:", player.SteamID)
+      else:
+        print("No players connected")
+      service.disconnect()
+
+    def on_message_recv(service, message):
+      print("Console message: %s" % message.Message)
+
+    def on_error(service, error):
+      traceback.print_exception(*error)
+
+    def on_disconnect(service):
+      print("Disconnected from rust server")
+
+    def on_connect(service):
+      service.on_message_recv.append(on_message_recv)
+      service.on_error.append(on_error)
+      service.on_disconnect.append(on_disconnect)
+      service.request("tail 10", on_tail_response)
+      service.request("playerlist", on_playerlist_response)
+
+    def main():
+      rust = RustService("my.rust.server.com", 28016, "myPassword")
+      rust.on_connect.append(on_connect)
+      rust.connect()
+
+    if __name__ == "__main__":
+      main()
+
+
+### Threads
 
     import ruco
     import time
@@ -269,7 +320,7 @@ There are two ways to manage multiple servers.
       playerlist_event.set()
 
     def on_connect(service):
-      service.request("tail 10", on_tail_response)
+      service.request("console.tail 10", on_tail_response)
       service.request("playerlist", on_playerlist_response)
 
     def on_message_recv(service, message):
@@ -299,8 +350,7 @@ There are two ways to manage multiple servers.
     if __name__ == "__main__":
       main()
 
-
-### With Comments
+### Threads with Comments
 
     import ruco
     import time
@@ -341,7 +391,7 @@ There are two ways to manage multiple servers.
     def on_connect(service):
       # Send the 'tail' command to get the last few lines of console output. Send
       # the command request along with a callback to handle the command's response.
-      service.request("tail 10", on_tail_response)
+      service.request("console.tail 10", on_tail_response)
 
       # Print the list of connected players. Send the command request along with
       # the callback to handle the command's response.

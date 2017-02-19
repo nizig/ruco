@@ -3,12 +3,12 @@ from setuptools import setup
 setup(
     name="ruco",
     packages=["ruco"],
-    version="0.2",
+    version="0.3",
     description="Rust (by Facepunch Studios) rcon API and shell utility",
     author="exo",
     author_email="exo@eckso.io",
     url="https://github.com/nizig/ruco",
-    download_url="https://github.com/nizig/ruco/tarball/release-0.1",
+    download_url="https://github.com/nizig/ruco/tarball/release-0.3",
     zip_safe=False,
     entry_points={
         "console_scripts": ["ruco=ruco.cli:main"],
@@ -16,6 +16,8 @@ setup(
     install_requires=[
         "PyYAML",
         "click",
+        "pytz",
+        "localtz",
         "tabulate",
         "websocket-client",
     ],

@@ -9,34 +9,28 @@ import traceback
 
 DEBUG = 3
 
-def attrs(*args, **pairs):
+def xttrs(type, *args, **kwargs):
   """
   Wrap an instance of a mapping type such that keys may be accessed as
   attributes. The mapping super-type may be specified, defaulting to dict.
-
-  attrs(source_dict)
-  attrs(source_dict, super_type)
-  attrs(key1=val1, key2=val2, ...)
-  attrs(None, super_type, key1=val1, key2=val2, ...)
   """
-  # FIXME This could use some love, but it works well enough for now.
-  if args and args[0] and pairs:
-    raise ValueError("copy and pairs are mutually exclusive")
-  copy = args and args[0] or pairs
-  type = len(args) > 1 and args[1] or dict
+  type = type and type or dict
   class _(type):
     __setattr__ = type.__setitem__
     __delattr__ = type.__delitem__
     def __init__(self):
-      super().__init__(copy)
+      super().__init__(*args, **kwargs)
     def __getattr__(self, name):
       if name not in self:
         raise AttributeError("No such attribute: %s" % name)
       return self.__getitem__(name)
   return _()
 
-def ottrs(*args, **pairs):
-  return attrs(args and args[0] or None, collections.OrderedDict, **pairs)
+def attrs(*args, **kwargs):
+  return xttrs(dict, *args, **kwargs)
+
+def ottrs(*args, **kwargs):
+  return xttrs(collections.OrderedDict, *args, **kwargs)
 
 fds = attrs(
   out=sys.stdout,

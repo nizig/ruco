@@ -74,7 +74,7 @@ options:
   - name: --debug
     help: "0: error and warning, 1: debug, 2: spam, default {debug}"
     type: int
-    default: 0
+    default: {debug}
 
   - name: --dump
     help: Dump messages
@@ -85,9 +85,9 @@ options:
     is_flag: yes
 
   - name: --trace-filter
-    help: "0: race all calls, 1: trace ruco calls only, default: {trace_filter}"
+    help: "0: trace all calls, 1: trace ruco calls only, default: {trace_filter}"
     type: int
-    default: 1
+    default: {trace_filter}
 
 commands:
 
@@ -231,9 +231,7 @@ def ruco(
       raise Exception("not implemented") # FIXME
     rc.password = password
     nonlocal debug
-    if debug not in (0, 1, 2):
-      debug = 0
-    rc.debug = debug
+    rc.debug = debug in (0, 1, 2) and debug or 0
     rc.dump = dump
     rc.trace = trace
     rc.trace_filter = trace_filter in (0, 1) and trace_filter or 1

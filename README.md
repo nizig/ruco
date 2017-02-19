@@ -59,7 +59,7 @@ Issue rcon commands without waiting for a server response:
 
 Show console output:
 
-    $ ruco -a narwhal.eckso.io -p mySocratesNote tail
+    $ ruco -a narwhal.eckso.io -p mySocratesNote console
     Unloaded plugin Build v1.1.7 by Reneb & NoGrod
     Loaded plugin Build v1.1.7 by Reneb & NoGrod
     Saved 55,481 ents, serialization(0.01), write(0.03), disk(0.01) totalstall(0.08).
@@ -101,7 +101,7 @@ Show console output:
 
 Show the last 5 lines of console output:
 
-    $ ruco -a narwhal.eckso.io tail -n 5
+    $ ruco -a narwhal.eckso.io console -n 5
     [FancyDrop] Next timed Airdrop in 22 minutes
     Saved 55,472 ents, serialization(0.01), write(0.03), disk(0.01) totalstall(0.07).
     Saving complete
@@ -111,7 +111,7 @@ Show the last 5 lines of console output:
 
 Show the last 5 lines of console output, but stay connected, showing future server output in real time.    
 
-    $ ruco -a narwhal.eckso.io tail -n 5 -f
+    $ ruco -a narwhal.eckso.io console -n 5 -f
     [FancyDrop] Next timed Airdrop in 22 minutes
     Saved 55,472 ents, serialization(0.01), write(0.03), disk(0.01) totalstall(0.07).
     Saving complete
@@ -156,9 +156,9 @@ Now we can invoke ruco without passing a bunch of command-line flags. Here are t
     $ ruco rcon reload Build
     $ ruco rcon -q readcfg
     $ ruco rcon -q reload Build
-    $ ruco tail
-    $ ruco tail -n 5
-    $ ruco tail -n 5 -f
+    $ ruco console
+    $ ruco console -n 5
+    $ ruco console -n 5 -f
 
 ## Managing multiple servers
 
@@ -188,7 +188,7 @@ There are two ways to manage multiple servers.
     # Run commands against server1
     $ . ~/server/server1.sh
     $ ruco players
-    $ ruco tail -n 5
+    $ ruco console -n 5
 
     # Run commands against server2
     $ . ~/server/server2.sh
@@ -217,7 +217,7 @@ There are two ways to manage multiple servers.
     # Run commands against server1
     $ export RUCO_RC=~/servers/server1.rucorc
     $ ruco players
-    $ ruco tail -n 5
+    $ ruco console -n 5
 
     # Run commands against server2
     $ export RUCO_RC=~/servers/server2.rucorc
@@ -228,7 +228,7 @@ There are two ways to manage multiple servers.
 
     # Run commands against server1
     $ RUCO_RC=~/servers/server1.rucorc ruco players
-    $ RUCO_RC=~/servers/server1.rucorc ruco tail -n 5
+    $ RUCO_RC=~/servers/server1.rucorc ruco console -n 5
 
     # Run commands against server2
     $ RUCO_RC=~/servers/server2.rucorc ruco rcon reload FancyCopter
@@ -238,7 +238,6 @@ There are two ways to manage multiple servers.
 
 ### Event loop
 
-    import ruco
     import time
     import traceback
 
@@ -289,7 +288,6 @@ There are two ways to manage multiple servers.
 
 ### Threads
 
-    import ruco
     import time
     import threading
     import traceback
@@ -352,7 +350,6 @@ There are two ways to manage multiple servers.
 
 ### Threads with Comments
 
-    import ruco
     import time
     import threading
     import traceback

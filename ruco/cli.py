@@ -163,14 +163,14 @@ def exit(status=0):
   os._exit(status)
   #sys.exit(status)
 
-def error(exc_info):
+def error(exc_info, status=-1):
   if isinstance(exc_info, Exception):
     exc_info = bits.make_exc_info(exc_info)
   if rc.debug:
     dbg("".join(traceback.format_exception(*exc_info)))
   else:
     err("%s: %s" % (exc_info[1].__class__.__name__, exc_info[1]))
-  exit(-1)
+  exit(status)
 
 def on_error(svc, exc_info):
   error(exc_info)
@@ -182,9 +182,7 @@ def start_death_clock(name, timeout, extype=None):
     threading.currentThread().setName("<%s>" % name)
     bits.trace(enabled=rc.trace, filt=rc.trace_filter)
     extype and error(extype("Timed out")) or exit()
-  t = getattr(start_death_clock, "timer", None)
-  if t:
-    t.cancel()
+  stop_timer()
   t = start_death_clock.timer = threading.Timer(timeout, on_timeout)
   t.start()
 
@@ -208,12 +206,12 @@ def call(f, *args, **kwargs):
   except SystemExit:
     raise
   except KeyboardInterrupt:
-    exit()
+    exit(-1)
   except:
     error(sys.exc_info())
 
 def connect(on_connect):
-  def on_connect_cancel_timer(svc):
+  def on_connect_stop_timer(svc):
     stop_timer()
   s = rc.service = RustService(
     rc.address,
@@ -221,7 +219,7 @@ def connect(on_connect):
     rc.password,
     dump=rc.dump
   )
-  s.on_connect.append(on_connect_cancel_timer)
+  s.on_connect.append(on_connect_stop_timer)
   s.on_connect.append(on_connect)
   start_connect_timer()
   s.connect()
@@ -232,14 +230,13 @@ def display(msg):
     return
   stamp = time.strftime("%H:%M:%S", time.localtime(msg.get("Time")))
   type = "Type" in msg and msg.Type and "[%s] " % msg.Type or ""
-  text = "%s %s%s" % (stamp, type, msg.Message)
   if "Username" in msg:
     text = "%s <%s> %s" % (stamp, msg.Username, msg.Message)
   else:
     try:
       text = "%s %s" % (stamp, dumps(loads(msg.Message), indent=4))
     except:
-      pass
+      text = "%s %s%s" % (stamp, type, msg.Message)
   out(text)
 
 def ruco(
@@ -268,24 +265,21 @@ def ruco(
   call(_ruco)
 
 def ruco_rcon(quiet, command):
-  timer_reset = attrs(value=False)
   def on_message_send(svc, msg):
     exit()
   def on_command_response(svc, msg):
     display(msg)
-    if timer_reset.value is False:
-      start_response_timer(extype=None)
-      timer_reset.value = True
   def on_connect(svc):
     if quiet:
       svc.on_message_send.append(on_message_send)
     else:
-      start_response_timer()
+      start_response_timer(extype=None)
     svc.request(" ".join(command), on_command_response)
   call(connect, on_connect)
 
 def ruco_players():
   def on_playerlist_response(svc, msg):
+    stop_timer()
     players = loads(msg.Message)
     if not players:
       out("No players connected.")
@@ -313,6 +307,7 @@ def ruco_players():
     out(tabulate(players, headers=headers))
     exit()
   def on_connect(svc):
+    start_response_timer()
     svc.request("playerlist", on_playerlist_response)
   call(connect, on_connect)
 
@@ -321,6 +316,7 @@ def _ruco_log(follow, count, cmd, filt=None):
     if not filt or not filt(msg):
       display(msg)
   def on_tail_response(svc, msg):
+    stop_timer()
     logs = loads(msg.Message)
     if len(logs) == 0:
       print("No messages available.")
@@ -332,6 +328,7 @@ def _ruco_log(follow, count, cmd, filt=None):
     else:
       exit()
   def on_connect(svc):
+    start_response_timer()
     svc.request("%s %d" % (cmd, count), on_tail_response)
   call(connect, on_connect)
 
@@ -347,6 +344,7 @@ def ruco_say(message):
     exit()
   def on_connect(svc):
     svc.on_message_send.append(on_message_send)
+    start_response_timer()
     svc.command("say %s" % " ".join(message))
   call(connect, on_connect)
 
@@ -368,6 +366,7 @@ def load_rc():
     return
   try:
     for k, v in read_rc(p).items():
+      # A hack, but unintrusive and it works
       if k not in os.environ:
         os.environ[k] = v
   except:
